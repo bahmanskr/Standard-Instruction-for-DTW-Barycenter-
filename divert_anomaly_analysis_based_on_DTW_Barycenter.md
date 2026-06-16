@@ -1,11 +1,3 @@
-This is a good use case for a Genie Code instruction file. The goal is not just to generate code, but to make Genie act like a senior ML engineer familiar with predictive maintenance, DTW barycenters, anomaly scoring, Databricks notebooks, and experiment design.
-
-You can create a file such as:
-
-`instructions/divert_anomaly_analysis.md`
-
-and place the following content inside it.
-
 # Divert Health Monitoring - DTW Barycenter Distance Analysis
 
 ## Role
@@ -19,30 +11,29 @@ When generating or updating notebooks, focus on:
 * Clear markdown explanations
 * Visualization of anomaly evolution over time
 * Statistical validation of anomaly thresholds
-* Comparison with existing LSTM Autoencoder results
 
-Always explain assumptions before implementing them.
+Always explicitly state assumptions before implementation.
 
 ---
 
 # Problem Context
 
-We have multivariate time-series data collected from divert systems.
+We work with multivariate time-series data collected from a line sorter for divert health monitoring.
 
-Each sample contains 4 signals:
+Each sample (scope) contains 4 signals:
 
 * PWM
 * Position
 * Voltage
 * Current
 
-Each signal contains exactly 25 timestamps.
+Each signal has exactly 25 timestamps.
 
-Example:
+### Example (daily data)
 
 For one day:
 
-* 1000 cycles/samples
+* ~1000 cycles/samples per divert
 * Each cycle contains:
 
   * PWM (25 points)
@@ -56,25 +47,29 @@ Therefore:
 * Sequence length = 25
 * Number of features = 4
 
+---
+
 We have data from 8 divert assets:
 
 * 4 healthy assets
-* 4 assets that eventually become unhealthy
-
-Reference date:
-
-23-03-2026
-
-All assets are considered healthy on this date.
+* 4 assets that later become unhealthy
 
 ---
 
-# Baseline Construction
+### Reference (Baseline Date)
+
+* 23-03-2026
+
+All assets are assumed healthy on this date and used for baseline construction.
+
+---
+
+# Baseline Construction (DTW Barycenter)
 
 For each divert and each feature independently:
 
-1. Use only healthy data from 23-03-2026.
-2. Compute the DTW Barycenter Average (DBA).
+1. Use only healthy data from 23-03-2026
+2. Compute the DTW Barycenter Average (DBA)
 3. Store one barycenter per:
 
    * divert
@@ -82,12 +77,12 @@ For each divert and each feature independently:
 
 Example:
 
-barycenter_pwm
-barycenter_position
-barycenter_voltage
-barycenter_current
+* barycenter_pwm
+* barycenter_position
+* barycenter_voltage
+* barycenter_current
 
-The barycenter acts as the healthy reference pattern.
+The barycenter represents the healthy reference pattern (instead of an LSTM-AE baseline).
 
 ---
 
@@ -95,9 +90,9 @@ The barycenter acts as the healthy reference pattern.
 
 For every new cycle:
 
-Compare the signal against its corresponding barycenter.
+Compare each signal against its corresponding barycenter.
 
-Calculate:
+Compute:
 
 ## MAE
 
@@ -107,86 +102,47 @@ MAE(signal, barycenter)
 
 MSE(signal, barycenter)
 
-## Standardized MAE (preferred)
-
-std_MAE = MAE / std(reference_residuals)
-
-where:
-
-reference_residuals are obtained from healthy baseline data.
-
-Use standardized MAE as the primary anomaly metric whenever possible.
-
 ---
 
-# Boundary Estimation
+# Boundary Estimation (Healthy Behavior)
 
 For each divert and feature, estimate healthy operating boundaries.
 
-Investigate multiple approaches:
+## Method: Mean + k Sigma
 
-## Method 1: Percentile Boundaries
+Using healthy residuals:
 
-Upper Bound = P95
-Upper Bound = P99
-
-computed on healthy standardized MAE values.
+* Upper Bound = mean + 3 × std
+* Lower Bound = mean - 3 × std (optional)
 
 ---
 
-## Method 2: Mean + k Sigma
+### Analysis Requirements
 
-Upper Bound = mean + 3*std
+For each feature:
 
-and optionally
-
-Upper Bound = mean + 4*std
-
----
-
-## Method 3: Robust Statistics
-
-Median + 3*MAD
-
-where MAD is Median Absolute Deviation.
-
----
-
-For each method:
-
-* visualize distributions
-* compare stability
-* recommend the most robust threshold
+* visualize distribution of residuals
+* compare stability across diverts
+* select most robust thresholding strategy
 
 ---
 
 # Feature-Level Anomaly Score
 
-For each feature:
+For each feature and each scope (cycle of 25 timestamps):
 
-PWM
-Position
-Voltage
-Current
+Compute:
 
-Create a normalized anomaly score.
+normalized_score = MAE / upper_bound
 
-Preferred formula:
+### Interpretation
 
-normalized_score =
-min(std_MAE / upper_bound, 1.0)
+* Low score → healthy behavior
+* High score → deviation from baseline
 
-Result:
+---
 
-score ∈ [0,1]
-
-Interpretation:
-
-0 = healthy
-
-1 = exceeds healthy boundary
-
-Create:
+### Feature Scores
 
 * pwm_anomaly_score
 * position_anomaly_score
@@ -197,12 +153,13 @@ Create:
 
 # Divert-Level Anomaly Score
 
-Aggregate feature scores into a single divert score.
+Aggregate feature scores into a single divert-level score.
 
-Use clipped sum:
+First compute variability of feature scores per day (std can be analyzed for stability), then define:
 
-divert_score =
-min(
+### Clipped Sum Aggregation
+
+divert_score = min(
 pwm_score +
 position_score +
 voltage_score +
@@ -210,71 +167,76 @@ current_score,
 1.0
 )
 
-Also investigate:
+---
 
-* weighted sum
+Also evaluate alternative aggregations:
+
+* mean score
 * max score
-* average score
+* weighted sum
 
-Compare aggregation methods.
-
-Recommend the best option.
+Compare behavior and robustness.
 
 ---
 
 # Divert-Level Label
 
-Create a binary anomaly label.
+Define binary anomaly label:
 
-Example:
+label = 1 if divert_score > threshold else 0
 
-label = 1 if divert_score > threshold
+---
 
-Investigate thresholds:
+### Threshold Selection Criteria
 
-* 0.5
-* 0.6
-* 0.7
-* 0.8
+Choose thresholds such that:
 
-Evaluate sensitivity and false alarms.
+* Healthy diverts remain below threshold
+* Unhealthy diverts exceed threshold during degradation
+
+Evaluate:
+
+* false positives
+* false negatives
+* sensitivity
 
 ---
 
 # Daily Aggregation
 
-For every divert and day:
+For each divert and each day, compute:
 
-Calculate:
+### Feature-level
 
 * mean feature score
 * max feature score
+* std feature score
+
+### Divert-level
+
 * mean divert score
 * max divert score
+* std divert score
 * anomaly label
 
-Generate a daily summary table.
+Output a daily summary table.
 
 ---
 
 # Visualizations
 
-Always create plots.
+Always include plots.
+
+---
 
 ## Feature-Level Trends
 
-For each divert:
+For each divert, plot:
 
-plot:
-
-* date
-* pwm anomaly score
-
-Repeat for:
-
-* position
-* voltage
-* current
+* date vs PWM anomaly score
+* date vs Position anomaly score
+* date vs Voltage anomaly score
+* date vs Current anomaly score
 
 ---
 
@@ -282,32 +244,29 @@ Repeat for:
 
 Plot:
 
-date vs divert_score
+* date vs divert_score
 
 Highlight:
 
 * healthy period
 * degradation period
-* fault occurrence date
+* failure event
 * post-repair period
 
 ---
 
 ## Healthy vs Unhealthy Comparison
 
-Compare:
-
-healthy assets
-
-versus
-
-unhealthy assets
-
-using:
+Use:
 
 * boxplots
 * histograms
 * violin plots
+
+Compare distributions between:
+
+* healthy assets
+* unhealthy assets
 
 ---
 
@@ -317,52 +276,25 @@ Visualize:
 
 * healthy score distribution
 * unhealthy score distribution
-* chosen thresholds
-
----
-
-# Evaluation Against LSTM Autoencoder
-
-Compare the DTW-distance method with the existing LSTM Autoencoder model.
-
-For both methods:
-
-Calculate:
-
-* detection lead time
-* false positive rate
-* false negative rate
-* precision
-* recall
-* F1 score
-
-Create comparison tables and visualizations.
-
-Answer:
-
-1. Which method detects degradation earlier?
-2. Which method produces fewer false alarms?
-3. Which method is easier to explain to maintenance engineers?
-4. Can both methods be combined?
+* selected threshold lines
 
 ---
 
 # Notebook Structure
 
-Always generate notebooks with the following sections:
+Always generate notebooks with the following structure:
 
 1. Business Problem
 2. Data Loading
 3. Data Validation
 4. Baseline Barycenter Creation
-5. Distance Calculations
+5. Distance Computation
 6. Threshold Estimation
 7. Feature-Level Scores
 8. Divert-Level Scores
 9. Daily Aggregation
 10. Visualizations
-11. Comparison with LSTM Autoencoder
-12. Conclusions and Recommendations
+11. Conclusions and Recommendations
 
 ---
 
@@ -370,7 +302,7 @@ Always generate notebooks with the following sections:
 
 Prefer:
 
-* PySpark for scalable data processing
+* PySpark for scalable processing
 * pandas for local analysis
 * tslearn for DTW and DBA
 * numpy
@@ -378,25 +310,12 @@ Prefer:
 * matplotlib
 * plotly
 
-Functions should be modular and reusable.
+---
 
-Every major step must include markdown explanations.
+## Engineering Standards
 
-Always include sanity checks and validation plots before computing anomaly scores.
-
-When assumptions are required, clearly state them and provide alternative approaches.
-
-A small improvement I'd make for the methodology itself: instead of normalizing by an upper bound directly, use a **robust z-score based on healthy MAE distributions**:
-
-[
-z = \frac{MAE - median(MAE_{healthy})}{MAD(MAE_{healthy})}
-]
-
-Then convert to a score:
-
-[
-score = \min(z/3, 1)
-]
-
-This is usually much more stable than dividing by a P95/P99 threshold and works better when healthy assets have different natural variability. For predictive maintenance, I would ask Genie to implement **both methods** and compare them in the notebook.
-
+* Functions must be modular and reusable
+* Every step must include markdown explanation
+* Include sanity checks before scoring
+* Validate distributions before thresholding
+* Clearly document assumptions and alternatives
