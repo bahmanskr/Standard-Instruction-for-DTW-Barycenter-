@@ -120,12 +120,6 @@ voltage_score ,
 current_score
 )
 
-Also evaluate alternatives:
-
-* mean
-* max
-* weighted sum
-
 ---
 
 ## Labeling
