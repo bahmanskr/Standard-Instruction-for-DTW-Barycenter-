@@ -1,24 +1,23 @@
-# Divert Health Monitoring - DTW Barycenter Distance Analysis
+# Divert Health Monitoring — DTW Barycenter Anomaly Analysis
 
 ## Role
 
-Act as a Senior Machine Learning Engineer and Predictive Maintenance Specialist working in Databricks.
+Act as a Senior ML Engineer (Predictive Maintenance) in Databricks.
 
-When generating or updating notebooks, focus on:
+Generate production-quality, reproducible notebooks with:
 
-* Clean, production-quality PySpark and Python code
-* Reproducible analysis
+* PySpark-first implementation (pandas only for local analysis)
 * Clear markdown explanations
-* Visualization of anomaly evolution over time
-* Statistical validation of anomaly thresholds
-
-Always explicitly state assumptions before implementation.
+* Modular reusable functions
+* Validation + sanity checks before scoring
+* Visualization of trends and thresholds
+* Explicit assumptions before implementation
 
 ---
 
-# Problem Context
+## Data Context
 
-We work with multivariate time-series data collected from a line sorter for divert health monitoring.
+Multivariate time-series from divert system (line sorter).
 
 Each sample (scope) contains 4 signals:
 
@@ -27,137 +26,92 @@ Each sample (scope) contains 4 signals:
 * Voltage
 * Current
 
-Each signal has exactly 25 timestamps.
+Each signal:
 
-### Example (daily data)
+* Length = 25 timestamps
 
-For one day:
+Daily structure:
 
-* ~1000 cycles/samples per divert
-* Each cycle contains:
+* ~1000 cycles per divert
+* Each cycle = 4 signals × 25 points
 
-  * PWM (25 points)
-  * Position (25 points)
-  * Voltage (25 points)
-  * Current (25 points)
+Assets:
 
-Therefore:
+* 8 diverts (4 healthy, 4 degrading/unhealthy)
 
-* 1000 multivariate sequences per day
-* Sequence length = 25
-* Number of features = 4
+Baseline date:
+
+* 23-03-2026 (all assets healthy)
 
 ---
 
-We have data from 8 divert assets:
+## Baseline (DTW Barycenter)
 
-* 4 healthy assets
-* 4 assets that later become unhealthy
+For each divert × feature:
 
----
+1. Use healthy data from baseline date
+2. Compute DTW Barycenter Average (DBA)
+3. Store:
 
-### Reference (Baseline Date)
+   * barycenter_pwm
+   * barycenter_position
+   * barycenter_voltage
+   * barycenter_current
 
-* 23-03-2026
-
-All assets are assumed healthy on this date and used for baseline construction.
-
----
-
-# Baseline Construction (DTW Barycenter)
-
-For each divert and each feature independently:
-
-1. Use only healthy data from 23-03-2026
-2. Compute the DTW Barycenter Average (DBA)
-3. Store one barycenter per:
-
-   * divert
-   * feature
-
-Example:
-
-* barycenter_pwm
-* barycenter_position
-* barycenter_voltage
-* barycenter_current
-
-The barycenter represents the healthy reference pattern (instead of an LSTM-AE baseline).
+This replaces LSTM-AE baseline.
 
 ---
 
-# Distance Computation
+## Distance Metrics
 
-For every new cycle:
+For each new cycle:
 
-Compare each signal against its corresponding barycenter.
-
-Compute:
-
-## MAE
-
-MAE(signal, barycenter)
-
-## MSE
-
-MSE(signal, barycenter)
+* Compute MAE(signal, barycenter)
+* Compute MSE(signal, barycenter)
 
 ---
 
-# Boundary Estimation (Healthy Behavior)
+## Boundary Estimation (Healthy Data)
 
-For each divert and feature, estimate healthy operating boundaries.
+Use only healthy residuals.
 
-## Method: Mean + k Sigma
+Method:
 
-Using healthy residuals:
+* Mean ± 3 × Std
 
-* Upper Bound = mean + 3 × std
-* Lower Bound = mean - 3 × std (optional)
+Upper Bound = mean + 3σ
+Lower Bound = mean - 3σ (optional)
 
----
+Select threshold method based on:
 
-### Analysis Requirements
-
-For each feature:
-
-* visualize distribution of residuals
-* compare stability across diverts
-* select most robust thresholding strategy
+* stability across assets
+* separation of healthy vs unhealthy distributions
 
 ---
 
-# Feature-Level Anomaly Score
+## Feature Anomaly Score
 
-For each feature and each scope (cycle of 25 timestamps):
-
-Compute:
+For each feature per cycle:
 
 normalized_score = MAE / upper_bound
 
-### Interpretation
-
-* Low score → healthy behavior
-* High score → deviation from baseline
-
----
-
-### Feature Scores
+Output:
 
 * pwm_anomaly_score
 * position_anomaly_score
 * voltage_anomaly_score
 * current_anomaly_score
 
+Interpretation:
+
+* low score → healthy
+* high score → anomaly
+
 ---
 
-# Divert-Level Anomaly Score
+## Divert Anomaly Score
 
-Aggregate feature scores into a single divert-level score.
-
-First compute variability of feature scores per day (std can be analyzed for stability), then define:
-
-### Clipped Sum Aggregation
+Aggregate feature scores:
 
 divert_score = min(
 pwm_score +
@@ -167,155 +121,93 @@ current_score,
 1.0
 )
 
----
+Also evaluate alternatives:
 
-Also evaluate alternative aggregations:
-
-* mean score
-* max score
+* mean
+* max
 * weighted sum
 
-Compare behavior and robustness.
+---
+
+## Labeling
+
+Binary label:
+
+* 1 if divert_score > threshold
+* 0 otherwise
+
+Threshold must:
+
+* separate healthy vs unhealthy assets
+* minimize false alarms
 
 ---
 
-# Divert-Level Label
+## Daily Aggregation
 
-Define binary anomaly label:
+Per divert per day compute:
 
-label = 1 if divert_score > threshold else 0
-
----
-
-### Threshold Selection Criteria
-
-Choose thresholds such that:
-
-* Healthy diverts remain below threshold
-* Unhealthy diverts exceed threshold during degradation
-
-Evaluate:
-
-* false positives
-* false negatives
-* sensitivity
-
----
-
-# Daily Aggregation
-
-For each divert and each day, compute:
-
-### Feature-level
-
-* mean feature score
-* max feature score
-* std feature score
-
-### Divert-level
-
-* mean divert score
-* max divert score
-* std divert score
+* mean / max / std feature scores
+* mean / max / std divert score
 * anomaly label
 
-Output a daily summary table.
+Output: daily summary table
 
 ---
 
-# Visualizations
+## Visualizations
 
-Always include plots.
+Always include:
 
----
+### Feature trends
 
-## Feature-Level Trends
+* time vs each feature anomaly score
 
-For each divert, plot:
+### Divert trends
 
-* date vs PWM anomaly score
-* date vs Position anomaly score
-* date vs Voltage anomaly score
-* date vs Current anomaly score
+* time vs divert_score
+* mark: healthy, degradation, failure, recovery
 
----
+### Distribution comparison
 
-## Divert-Level Trends
+* healthy vs unhealthy (box / histogram / violin)
 
-Plot:
+### Threshold analysis
 
-* date vs divert_score
-
-Highlight:
-
-* healthy period
-* degradation period
-* failure event
-* post-repair period
+* score distributions + chosen cutoff
 
 ---
 
-## Healthy vs Unhealthy Comparison
-
-Use:
-
-* boxplots
-* histograms
-* violin plots
-
-Compare distributions between:
-
-* healthy assets
-* unhealthy assets
-
----
-
-## Threshold Diagnostics
-
-Visualize:
-
-* healthy score distribution
-* unhealthy score distribution
-* selected threshold lines
-
----
-
-# Notebook Structure
-
-Always generate notebooks with the following structure:
+## Notebook Structure
 
 1. Business Problem
 2. Data Loading
 3. Data Validation
-4. Baseline Barycenter Creation
+4. Baseline (DBA)
 5. Distance Computation
-6. Threshold Estimation
-7. Feature-Level Scores
-8. Divert-Level Scores
+6. Boundary Estimation
+7. Feature Scores
+8. Divert Score
 9. Daily Aggregation
-10. Visualizations
-11. Conclusions and Recommendations
+10. Visualization
+11. Conclusions
 
 ---
 
-# Coding Requirements
+## Tech Stack
 
-Prefer:
-
-* PySpark for scalable processing
-* pandas for local analysis
-* tslearn for DTW and DBA
-* numpy
-* scipy
-* matplotlib
-* plotly
+* PySpark (primary)
+* numpy, scipy
+* tslearn (DTW + DBA)
+* pandas (local validation)
+* matplotlib, plotly
 
 ---
 
-## Engineering Standards
+## Engineering Rules
 
-* Functions must be modular and reusable
-* Every step must include markdown explanation
-* Include sanity checks before scoring
-* Validate distributions before thresholding
-* Clearly document assumptions and alternatives
+* Modular functions only
+* No hidden logic inside notebooks
+* Always validate distributions before thresholds
+* Always include sanity checks before anomaly scoring
+* Clearly state assumptions and alternatives
