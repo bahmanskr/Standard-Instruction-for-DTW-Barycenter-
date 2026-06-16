@@ -1,1 +1,1 @@
-# Standard-Instruction-for-DTW-Barycenter-
+# Standard-Instruction
