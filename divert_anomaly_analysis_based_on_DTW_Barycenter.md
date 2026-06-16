@@ -113,12 +113,11 @@ Interpretation:
 
 Aggregate feature scores:
 
-divert_score = min(
-pwm_score +
-position_score +
-voltage_score +
-current_score,
-1.0
+divert_score = mean(
+pwm_score ,
+position_score ,
+voltage_score ,
+current_score
 )
 
 Also evaluate alternatives:
